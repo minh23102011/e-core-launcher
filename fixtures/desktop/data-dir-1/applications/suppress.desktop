@@ -1,0 +1,4 @@
+[Desktop Entry]
+Type=Application
+Name=Suppressed System Application
+Exec=fixture-system --suppressed

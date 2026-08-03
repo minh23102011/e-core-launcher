@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Default Name
+Name[fr]=Nom français
+Name[fr_CA]=Nom québécois
+GenericName=Default Generic
+GenericName[fr]=Nom générique
+Exec=fixture-simple --localized

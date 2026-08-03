@@ -1,0 +1,4 @@
+[Desktop Entry]
+Type=Application
+Name=Second Directory Application
+Exec=fixture-system --second

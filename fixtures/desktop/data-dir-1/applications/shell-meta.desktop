@@ -1,0 +1,4 @@
+[Desktop Entry]
+Type=Application
+Name=Shell Metacharacters
+Exec=fixture-meta ; | && $HOME $(touch)

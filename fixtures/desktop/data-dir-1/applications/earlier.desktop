@@ -1,0 +1,4 @@
+[Desktop Entry]
+Type=Application
+Name=Earlier System Directory
+Exec=fixture-system --earlier

@@ -1,0 +1,4 @@
+[Desktop Entry]
+Type=Application
+Name=Quoted Executable
+Exec="fixture quoted" "two words" escaped\ space

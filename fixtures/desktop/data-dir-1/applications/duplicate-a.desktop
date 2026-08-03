@@ -1,0 +1,4 @@
+[Desktop Entry]
+Type=Application
+Name=Duplicate Target
+Exec=fixture-simple --duplicate

@@ -1,0 +1,13 @@
+# A desktop action must not replace the main command.
+[Desktop Entry]
+Type=Application
+Name=Simple Application
+GenericName=Fixture Program
+Exec=fixture-simple
+Icon=fixture-simple-icon
+Categories=Utility;Development;
+StartupWMClass=FixtureSimple
+
+[Desktop Action NewWindow]
+Name=Wrong Action Name
+Exec=fixture-action

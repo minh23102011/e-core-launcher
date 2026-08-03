@@ -1,0 +1,4 @@
+[Desktop Entry]
+Type=Link
+Name=Not An Application
+Exec=fixture-simple --link

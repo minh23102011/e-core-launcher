@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=Available TryExec
+TryExec=fixture-try
+Exec=fixture-simple --tryexec

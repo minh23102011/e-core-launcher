@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=User Override
+Exec=fixture-user --user
+Icon=user-override
+Categories=Utility;

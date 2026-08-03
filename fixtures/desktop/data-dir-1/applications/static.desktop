@@ -1,0 +1,4 @@
+[Desktop Entry]
+Type=Application
+Name=Static Arguments
+Exec=fixture-static --start-minimized --profile default

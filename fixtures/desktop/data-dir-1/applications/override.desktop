@@ -1,0 +1,4 @@
+[Desktop Entry]
+Type=Application
+Name=System Override Candidate
+Exec=fixture-system --system

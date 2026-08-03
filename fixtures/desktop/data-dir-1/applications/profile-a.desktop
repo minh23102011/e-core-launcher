@@ -1,0 +1,4 @@
+[Desktop Entry]
+Type=Application
+Name=Profile A
+Exec=fixture-simple --profile a

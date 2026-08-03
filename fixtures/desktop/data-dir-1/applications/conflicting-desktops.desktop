@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Conflicting Desktop Filters
+Exec=fixture-simple --conflicting-desktops
+OnlyShowIn=GNOME;
+NotShowIn=KDE;

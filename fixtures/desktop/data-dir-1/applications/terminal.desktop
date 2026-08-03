@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Terminal Application
+Exec=fixture-terminal --interactive
+Terminal=true
+Icon=utilities-terminal
+Categories=System;TerminalEmulator;

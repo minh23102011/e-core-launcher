@@ -1,0 +1,31 @@
+[package]
+name = "ecore-launcher"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Desktop application discovery and CPU topology detection for an opt-in E-core launcher"
+license = "MIT"
+readme = "README.md"
+keywords = ["linux", "desktop", "launcher", "cpu", "topology"]
+categories = ["command-line-utilities", "hardware-support"]
+
+[dependencies]
+clap = { version = "=4.5.51", default-features = false, features = [
+    "derive",
+    "error-context",
+    "help",
+    "std",
+    "suggestions",
+    "usage",
+] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+toml = "0.8"
+fs2 = "0.4"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
