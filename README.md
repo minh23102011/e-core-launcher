@@ -1,24 +1,19 @@
 # ecore-launcher
 
 `ecore-launcher` is an opt-in, Linux-only application launcher intended to let
-users explicitly choose ordinary desktop applications which may later run on
-CPU efficiency cores. It will never classify or move arbitrary running
+users explicitly choose ordinary desktop applications to run on reliably
+detected CPU efficiency cores. It will never classify or move arbitrary running
 processes, system services, kernel threads, desktop components, or unrelated
 workloads.
 
 Phase 1 provides conservative, read-only CPU topology detection. Phase 2 adds
 read-only desktop application discovery. Phase 3 adds an explicit,
-user-controlled TOML registry. Discovery does **not** grant management consent.
-Only applications explicitly added to the registry are managed by
-`ecore-launcher`.
-
-The current code does not launch, stop, pin, reprioritize, or otherwise modify
-processes. It does not apply CPU affinity, nice values, I/O scheduling,
-autostart changes, or process-tree enforcement. Phase 3 stores validated
-preferences for later phases only.
+user-controlled TOML registry. Phase 4 launches only enabled, explicitly
+registered desktop applications after fresh resolution and confirmed E-core
+detection. Discovery does **not** grant management consent.
 
 > If reliable E-core detection is unavailable, ecore-launcher will not invent
-> an E-core mask.
+> an E-core mask or launch an unpinned fallback.
 
 ## User-controlled application registry
 
@@ -143,6 +138,40 @@ cargo run -- config validate
 cargo run -- config show
 cargo run -- config show --json
 ```
+
+## Running registered applications
+
+`run` is the only command that starts a process. With no IDs it selects every
+enabled registry entry; with IDs, every requested ID must already be both
+registered and enabled. IDs are deduplicated and launched in desktop-ID order.
+Before any helper is started, every selected ID is freshly resolved through
+desktop discovery, `Terminal=true` entries are rejected, and topology must be
+conservatively classified as `Hybrid` with a non-empty E-core CPU list. An
+empty enabled registry is a successful no-op.
+
+```bash
+cargo run -- run
+cargo run -- run discord.desktop com.spotify.Client.desktop
+cargo run -- run --dry-run --json
+```
+
+`run --dry-run` follows the same complete planning path but starts nothing.
+For reproducible fixture diagnostics it accepts `--config`, `--data-home`,
+repeated `--data-dir`, `--ignore-desktop-filter`, and `--sysfs-root`. Launch
+resolution includes `NoDisplay=true` applications, keeps `Hidden=true`
+suppression, and continues to honor `OnlyShowIn`/`NotShowIn` unless the filter
+is explicitly ignored.
+
+The parent starts a hidden internal helper for each planned app. The helper
+applies the exact detected affinity set to itself and directly `exec`s the
+resolved executable. No shell, `taskset`, or post-launch affinity change is
+used, so shell metacharacters remain literal arguments and the target starts
+with the intended affinity. A reported PID means initiation succeeded; it does
+not claim that a GUI application later completed successfully.
+
+Phase 4 intentionally does not apply stored nice or I/O preferences, delays,
+process-tree enforcement, process monitoring, autostart, profiles, or any
+manual/fallback CPU mask.
 
 ### Validation and persistence
 

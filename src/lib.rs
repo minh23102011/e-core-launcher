@@ -1,7 +1,5 @@
-//! Reusable Linux topology detection, desktop discovery, and explicit registry APIs.
-//!
-//! The crate is intentionally read-only. It inspects sysfs and desktop-entry
-//! files, and does not launch processes or change CPU affinity.
+//! Reusable Linux topology detection, desktop discovery, explicit registry,
+//! and fail-closed E-core launch APIs.
 
 #![cfg_attr(not(target_os = "linux"), allow(dead_code))]
 
@@ -9,6 +7,7 @@
 compile_error!("ecore-launcher supports Linux only");
 
 pub mod discovery;
+pub mod launcher;
 pub mod registry;
 pub mod topology;
 
@@ -17,6 +16,10 @@ pub use discovery::{
     DiscoveryOptions, DiscoveryReport, DiscoveryWarning, DiscoveryWarningCategory,
     DiscoveryWarningSeverity, ExecParseError, ExecutableResolutionError, ExecutableResolver,
     ParsedExec,
+};
+pub use launcher::{
+    build_launch_plan, exec_with_affinity, execute_plan, InitiatedApplication, LaunchPlan,
+    LaunchReport, LauncherError, PlannedApplication,
 };
 pub use registry::{
     resolve_config_path, validate_registry, AddApplicationsResult, AppRegistry,

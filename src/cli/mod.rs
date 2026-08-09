@@ -1,5 +1,6 @@
 mod discover;
 mod registry;
+mod run;
 mod topology;
 
 use std::error::Error;
@@ -8,13 +9,14 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 use self::discover::DiscoverArgs;
+use self::run::{HelperArgs, RunArgs};
 use self::topology::TopologyArgs;
 
 #[derive(Debug, Parser)]
 #[command(
     name = "ecore-launcher",
     version,
-    about = "Opt-in Linux application discovery and CPU topology inspection"
+    about = "Opt-in Linux desktop application launcher for reliably detected E-cores"
 )]
 struct Cli {
     /// Override the XDG registry configuration file for registry commands.
@@ -47,6 +49,10 @@ enum Command {
     Discover(DiscoverArgs),
     /// Inspect active CPU topology without modifying the system.
     Topology(TopologyArgs),
+    /// Launch enabled, explicitly registered applications on detected E-cores.
+    Run(RunArgs),
+    #[command(name = "__exec", hide = true)]
+    InternalExec(HelperArgs),
 }
 
 pub fn run() -> Result<(), Box<dyn Error>> {
@@ -86,5 +92,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         ),
         Command::Discover(arguments) => discover::run(&arguments),
         Command::Topology(arguments) => topology::run(&arguments),
+        Command::Run(arguments) => run::run(&arguments, cli.config.as_deref()),
+        Command::InternalExec(arguments) => run::run_helper(&arguments),
     }
 }
