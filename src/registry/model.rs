@@ -9,24 +9,24 @@ pub const CURRENT_SCHEMA_VERSION: u32 = 1;
 /// Maximum number of explicitly managed applications in one registry.
 pub const MAX_REGISTERED_APPLICATIONS: usize = 10_000;
 
-/// Default delay in seconds before a future launcher starts an application.
+/// Default delay in seconds before the launcher starts an application.
 pub const DEFAULT_DELAY_SECONDS: u64 = 0;
-/// Default nice value stored for a future launcher phase.
+/// Default nice value applied by the runtime helper.
 pub const DEFAULT_NICE: i8 = 5;
 /// Default I/O priority within the `best-effort` class.
 pub const DEFAULT_IO_PRIORITY: u8 = 4;
 
-/// I/O scheduling class stored as a preference for a later launcher phase.
+/// I/O scheduling class applied by the runtime helper.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum IoPriorityClass {
     /// Do not request an I/O priority change.
     None,
-    /// Future real-time I/O preference.
+    /// Real-time I/O policy.
     Realtime,
-    /// Future best-effort I/O preference.
+    /// Best-effort I/O policy.
     BestEffort,
-    /// Future idle I/O preference.
+    /// Idle I/O policy.
     Idle,
 }
 
@@ -46,14 +46,13 @@ impl std::fmt::Display for IoPriorityClass {
 ///
 /// This registry intentionally uses a snapshot model: later changes to these
 /// defaults do not alter applications which have already been registered.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct LauncherDefaults {
     /// Default startup delay in seconds, bounded by validation.
     pub default_delay_seconds: u64,
-    /// Default Linux nice value for a later phase.
+    /// Default Linux nice value.
     pub default_nice: i8,
-    /// Default I/O class for a later phase.
+    /// Default I/O class.
     pub default_io_class: IoPriorityClass,
     /// Default I/O priority when the selected class accepts one.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -63,6 +62,56 @@ pub struct LauncherDefaults {
     /// Unknown launcher keys retained across canonical rewrites.
     #[serde(flatten)]
     pub(crate) extra: BTreeMap<String, toml::Value>,
+}
+
+#[derive(Deserialize)]
+#[serde(default)]
+struct LauncherDefaultsWire {
+    default_delay_seconds: u64,
+    default_nice: i8,
+    default_io_class: IoPriorityClass,
+    default_io_priority: Option<u8>,
+    default_enforce_process_tree: bool,
+    #[serde(flatten)]
+    extra: BTreeMap<String, toml::Value>,
+}
+
+impl Default for LauncherDefaultsWire {
+    fn default() -> Self {
+        let defaults = LauncherDefaults::default();
+        Self {
+            default_delay_seconds: defaults.default_delay_seconds,
+            default_nice: defaults.default_nice,
+            default_io_class: defaults.default_io_class,
+            default_io_priority: None,
+            default_enforce_process_tree: defaults.default_enforce_process_tree,
+            extra: BTreeMap::new(),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for LauncherDefaults {
+    fn deserialize<Deserializer>(deserializer: Deserializer) -> Result<Self, Deserializer::Error>
+    where
+        Deserializer: serde::Deserializer<'de>,
+    {
+        let wire = LauncherDefaultsWire::deserialize(deserializer)?;
+        let default_io_priority = wire.default_io_priority.or_else(|| {
+            matches!(
+                wire.default_io_class,
+                IoPriorityClass::BestEffort | IoPriorityClass::Realtime
+            )
+            .then_some(DEFAULT_IO_PRIORITY)
+        });
+        Ok(Self {
+            default_delay_seconds: wire.default_delay_seconds,
+            default_nice: wire.default_nice,
+            default_io_class: wire.default_io_class,
+            default_io_priority,
+            default_enforce_process_tree: wire.default_enforce_process_tree,
+            extra: wire.extra,
+        })
+    }
 }
 
 impl Default for LauncherDefaults {
@@ -79,20 +128,19 @@ impl Default for LauncherDefaults {
 }
 
 /// One application that the user explicitly elected to manage later.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct RegisteredApplication {
     /// Stable desktop-file ID. It is an identity, not a filesystem path.
     pub desktop_id: String,
     /// Display name captured when the user selected the application.
     pub name: String,
-    /// Whether a future launcher phase may act on this selected application.
+    /// Whether the launcher may act on this selected application.
     pub enabled: bool,
-    /// Snapshot startup delay in seconds for a future phase.
+    /// Snapshot startup delay in seconds.
     pub delay_seconds: u64,
-    /// Snapshot Linux nice value for a future phase.
+    /// Snapshot Linux nice value.
     pub nice: i8,
-    /// Snapshot I/O class for a future phase.
+    /// Snapshot I/O class.
     pub io_class: IoPriorityClass,
     /// Snapshot I/O priority when the selected class accepts one.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -105,6 +153,68 @@ pub struct RegisteredApplication {
     /// Unknown application keys retained across canonical rewrites.
     #[serde(flatten)]
     pub(crate) extra: BTreeMap<String, toml::Value>,
+}
+
+#[derive(Deserialize)]
+#[serde(default)]
+struct RegisteredApplicationWire {
+    desktop_id: String,
+    name: String,
+    enabled: bool,
+    delay_seconds: u64,
+    nice: i8,
+    io_class: IoPriorityClass,
+    io_priority: Option<u8>,
+    enforce_process_tree: bool,
+    desktop_file: Option<PathBuf>,
+    #[serde(flatten)]
+    extra: BTreeMap<String, toml::Value>,
+}
+
+impl Default for RegisteredApplicationWire {
+    fn default() -> Self {
+        let defaults = RegisteredApplication::default();
+        Self {
+            desktop_id: defaults.desktop_id,
+            name: defaults.name,
+            enabled: defaults.enabled,
+            delay_seconds: defaults.delay_seconds,
+            nice: defaults.nice,
+            io_class: defaults.io_class,
+            io_priority: None,
+            enforce_process_tree: defaults.enforce_process_tree,
+            desktop_file: defaults.desktop_file,
+            extra: BTreeMap::new(),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for RegisteredApplication {
+    fn deserialize<Deserializer>(deserializer: Deserializer) -> Result<Self, Deserializer::Error>
+    where
+        Deserializer: serde::Deserializer<'de>,
+    {
+        let wire = RegisteredApplicationWire::deserialize(deserializer)?;
+        let io_priority = wire.io_priority.or_else(|| {
+            matches!(
+                wire.io_class,
+                IoPriorityClass::BestEffort | IoPriorityClass::Realtime
+            )
+            .then_some(DEFAULT_IO_PRIORITY)
+        });
+        Ok(Self {
+            desktop_id: wire.desktop_id,
+            name: wire.name,
+            enabled: wire.enabled,
+            delay_seconds: wire.delay_seconds,
+            nice: wire.nice,
+            io_class: wire.io_class,
+            io_priority,
+            enforce_process_tree: wire.enforce_process_tree,
+            desktop_file: wire.desktop_file,
+            extra: wire.extra,
+        })
+    }
 }
 
 impl Default for RegisteredApplication {

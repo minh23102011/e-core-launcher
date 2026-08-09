@@ -116,23 +116,23 @@ pub struct ConfigureArgs {
     /// Registered stable desktop ID.
     desktop_id: String,
 
-    /// Future startup delay in seconds (0 through 3600).
+    /// Startup delay in seconds (0 through 3600).
     #[arg(long)]
     delay: Option<u64>,
 
-    /// Future Linux nice value (-20 through 19; negative values may require privileges).
+    /// Linux nice value (-20 through 19; negative values may require privileges).
     #[arg(long)]
     nice: Option<i8>,
 
-    /// Future I/O scheduling class; no I/O setting is applied in Phase 3.
+    /// Linux I/O scheduling class applied at launch.
     #[arg(long, value_enum)]
     io_class: Option<IoClassArg>,
 
-    /// Future I/O priority (0 through 7 for best-effort or realtime).
+    /// I/O priority (0 through 7 for best-effort or realtime).
     #[arg(long)]
     io_priority: Option<u8>,
 
-    /// Future process-tree preference (`true` or `false`).
+    /// Stored process-tree preference (`true` or `false`) for a later phase.
     #[arg(long, value_name = "BOOL")]
     enforce_process_tree: Option<bool>,
 

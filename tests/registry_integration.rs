@@ -276,6 +276,34 @@ fn registry_operations_are_explicit_idempotent_and_keep_unavailable_entries() {
 }
 
 #[test]
+fn idle_io_policy_round_trips_without_inventing_a_priority() {
+    let root = TempDirectory::new("idle-io-round-trip");
+    let path = config_path(&root);
+    let store = RegistryStore::new(path);
+    let mut registry = AppRegistry::default();
+    registry
+        .add_discovered(&[discovered("idle.desktop", "Idle")])
+        .unwrap_or_else(|error| panic!("add idle app: {error}"));
+    registry
+        .configure(
+            "idle.desktop",
+            &ApplicationSettingsUpdate {
+                io_class: Some(IoPriorityClass::Idle),
+                ..ApplicationSettingsUpdate::default()
+            },
+        )
+        .unwrap_or_else(|error| panic!("configure idle I/O policy: {error}"));
+    store
+        .save(&registry)
+        .unwrap_or_else(|error| panic!("save idle I/O policy: {error}"));
+    let reloaded = store
+        .load()
+        .unwrap_or_else(|error| panic!("reload idle I/O policy: {error}"));
+    assert_eq!(reloaded.apps[0].io_class, IoPriorityClass::Idle);
+    assert_eq!(reloaded.apps[0].io_priority, None);
+}
+
+#[test]
 fn failed_operations_and_store_mutations_leave_prior_state_intact() {
     let root = TempDirectory::new("rollback");
     let path = config_path(&root);

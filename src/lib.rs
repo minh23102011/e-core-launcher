@@ -18,8 +18,10 @@ pub use discovery::{
     ParsedExec,
 };
 pub use launcher::{
-    build_launch_plan, exec_with_affinity, execute_plan, InitiatedApplication, LaunchPlan,
-    LaunchReport, LauncherError, PlannedApplication,
+    build_launch_plan, exec_with_affinity, execute_plan, execute_plan_with_options,
+    launch_schedule, run_exec_helper, ExecutionOptions, InitiatedApplication, LaunchFailure,
+    LaunchFailureStage, LaunchPlan, LaunchReport, LauncherError, PlannedApplication,
+    ScheduledLaunch,
 };
 pub use registry::{
     resolve_config_path, validate_registry, AddApplicationsResult, AppRegistry,

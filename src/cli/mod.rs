@@ -37,11 +37,11 @@ enum Command {
     Show(registry::ShowArgs),
     /// Remove explicit registry entries without changing desktop files or processes.
     Remove(registry::RemoveArgs),
-    /// Mark explicit registry entries enabled for a later launcher phase.
+    /// Mark explicit registry entries enabled for launching.
     Enable(registry::IdsArgs),
-    /// Mark explicit registry entries disabled for a later launcher phase.
+    /// Mark explicit registry entries disabled for launching.
     Disable(registry::IdsArgs),
-    /// Update validated stored preferences for a later launcher phase.
+    /// Update validated stored launch preferences.
     Configure(registry::ConfigureArgs),
     /// Inspect the resolved registry configuration.
     Config(registry::ConfigArgs),

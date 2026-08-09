@@ -104,7 +104,7 @@ fn validate_policy(
     if !(-20..=19).contains(&nice) {
         return Err(error(
             format!("{prefix}.nice"),
-            "must be in Linux range -20..=19; negative values may require privileges in a future phase",
+            "must be in Linux range -20..=19; negative values may require privileges at launch",
         ));
     }
     match (io_class, io_priority) {

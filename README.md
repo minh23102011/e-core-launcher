@@ -10,7 +10,8 @@ Phase 1 provides conservative, read-only CPU topology detection. Phase 2 adds
 read-only desktop application discovery. Phase 3 adds an explicit,
 user-controlled TOML registry. Phase 4 launches only enabled, explicitly
 registered desktop applications after fresh resolution and confirmed E-core
-detection. Discovery does **not** grant management consent.
+detection. Phase 5 applies stored delay, nice, and I/O policies and confirms
+the target exec transition. Discovery does **not** grant management consent.
 
 > If reliable E-core detection is unavailable, ecore-launcher will not invent
 > an E-core mask or launch an unpinned fallback.
@@ -156,22 +157,32 @@ cargo run -- run --dry-run --json
 ```
 
 `run --dry-run` follows the same complete planning path but starts nothing.
+Its plan includes the current executable and arguments, exact E-core list,
+delay, nice value, I/O class and priority, and the retained process-tree
+preference. It does not sleep or apply any runtime policy.
 For reproducible fixture diagnostics it accepts `--config`, `--data-home`,
 repeated `--data-dir`, `--ignore-desktop-filter`, and `--sysfs-root`. Launch
 resolution includes `NoDisplay=true` applications, keeps `Hidden=true`
 suppression, and continues to honor `OnlyShowIn`/`NotShowIn` unless the filter
 is explicitly ignored.
 
-The parent starts a hidden internal helper for each planned app. The helper
-applies the exact detected affinity set to itself and directly `exec`s the
-resolved executable. No shell, `taskset`, or post-launch affinity change is
-used, so shell metacharacters remain literal arguments and the target starts
-with the intended affinity. A reported PID means initiation succeeded; it does
-not claim that a GUI application later completed successfully.
+Delays are deadlines relative to one run start and are ordered by delay then
+desktop ID, so 0s, 2s, and 5s launch at approximately those times rather than
+cumulatively. The parent starts a hidden internal helper at each deadline. The
+helper applies the exact detected affinity, absolute nice value, and requested
+Linux I/O policy to itself before directly `exec`ing the resolved executable.
+The `none` I/O class leaves inherited I/O policy unchanged.
 
-Phase 4 intentionally does not apply stored nice or I/O preferences, delays,
-process-tree enforcement, process monitoring, autostart, profiles, or any
-manual/fallback CPU mask.
+A bounded close-on-exec pipe carries typed affinity, nice, I/O, and exec
+failures back to the parent. A ready message followed by pipe closure proves
+that exec succeeded; it does not claim that the GUI application completed.
+Earlier successful exec transitions remain reported if a later app fails. No
+shell, `taskset`, `ionice`, or post-launch policy change is used, so shell
+metacharacters remain literal arguments.
+
+Phase 5 retains `enforce_process_tree` as plan metadata but does not yet enforce
+process trees. Process monitoring, systemd/login integration, autostart,
+profiles, and manual/fallback CPU masks also remain out of scope.
 
 ### Validation and persistence
 
@@ -180,12 +191,11 @@ unsupported versions, duplicate or empty IDs, traversal-like IDs, invalid
 policy values, unreadable files, and symlinked final config files fail clearly;
 they are never silently replaced. The maximum registry size is 10,000 apps.
 
-Delay is constrained to `0..=3600`. Nice is stored in Linux's `-20..=19`
-range; a negative value may need extra privilege if a future phase eventually
-attempts to apply it. I/O classes are typed `none`, `realtime`, `best-effort`,
+Delay is constrained to `0..=3600`. Nice is applied in Linux's `-20..=19`
+range; a negative value may fail without sufficient privilege. I/O classes are typed `none`, `realtime`, `best-effort`,
 or `idle`; `realtime` and `best-effort` require priority `0..=7`, while `none`
-and `idle` require no numeric priority. Process-tree enforcement is a stored
-boolean only.
+and `idle` require no numeric priority. Privilege failures are reported without
+downgrading the policy. Process-tree enforcement remains a stored boolean only.
 
 Mutations create a `0700` parent when needed, acquire an advisory lock on a
 same-directory lock file, reload the latest registry, validate one logical

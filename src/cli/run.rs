@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 
 use clap::Args;
 use ecore_launcher::{
-    build_launch_plan, exec_with_affinity, execute_plan, resolve_config_path, CpuTopologyDetector,
-    LaunchPlan, LaunchReport, RegistryStore,
+    build_launch_plan, execute_plan, resolve_config_path, run_exec_helper, CpuTopologyDetector,
+    IoPriorityClass, LaunchPlan, LaunchReport, RegistryStore,
 };
 use serde::Serialize;
 
@@ -57,9 +57,25 @@ impl RunArgs {
 /// Hidden helper arguments. The `--` separator preserves target argument boundaries.
 #[derive(Debug, Args)]
 pub struct HelperArgs {
+    /// Inherited acknowledgement pipe descriptor.
+    #[arg(long)]
+    ack_fd: i32,
+
     /// E-core logical CPU ID; supplied once for each CPU by the parent launcher.
     #[arg(long = "cpu", required = true)]
     cpus: Vec<u32>,
+
+    /// Absolute Linux nice value to apply before exec.
+    #[arg(long, allow_hyphen_values = true)]
+    nice: i8,
+
+    /// Linux I/O class to apply before exec.
+    #[arg(long, value_parser = parse_io_class)]
+    io_class: IoPriorityClass,
+
+    /// I/O priority for best-effort and realtime classes.
+    #[arg(long)]
+    io_priority: Option<u8>,
 
     /// Direct target executable.
     #[arg(value_name = "EXECUTABLE")]
@@ -117,12 +133,11 @@ pub fn run(arguments: &RunArgs, config: Option<&Path>) -> Result<(), Box<dyn Err
         match execute_plan(&plan) {
             Ok(report) => report,
             Err(error) => {
+                let report = error.launch_report().cloned().unwrap_or_default();
                 let output = RunOutput {
                     dry_run: false,
                     plan,
-                    report: LaunchReport {
-                        initiated: error.initiated().to_vec(),
-                    },
+                    report,
                 };
                 emit(&output, arguments.json)?;
                 return Err(Box::new(error));
@@ -139,7 +154,15 @@ pub fn run(arguments: &RunArgs, config: Option<&Path>) -> Result<(), Box<dyn Err
 }
 
 pub fn run_helper(arguments: &HelperArgs) -> Result<(), Box<dyn Error>> {
-    exec_with_affinity(&arguments.cpus, &arguments.executable, &arguments.arguments)?;
+    run_exec_helper(
+        &arguments.cpus,
+        arguments.nice,
+        arguments.io_class,
+        arguments.io_priority,
+        &arguments.executable,
+        &arguments.arguments,
+        arguments.ack_fd,
+    )?;
     Ok(())
 }
 
@@ -152,9 +175,20 @@ fn print_human(output: &RunOutput) {
         println!("Validated launch plan (dry run):");
         for application in &output.plan.applications {
             println!(
-                "  {}: {}",
+                "  {}: {} {:?}",
                 application.desktop_id,
-                application.executable.display()
+                application.executable.display(),
+                application.arguments
+            );
+            println!(
+                "    delay={}s nice={} io_class={} io_priority={} enforce_process_tree={}",
+                application.delay_seconds,
+                application.nice,
+                application.io_class,
+                application
+                    .io_priority
+                    .map_or_else(|| "none".to_owned(), |priority| priority.to_string()),
+                application.enforce_process_tree
             );
         }
         println!("E-core CPUs: {:?}", output.plan.efficiency_cpus);
@@ -162,9 +196,12 @@ fn print_human(output: &RunOutput) {
     }
     for initiated in &output.report.initiated {
         println!(
-            "Initiated {} (PID {}).",
+            "Exec succeeded for {} (PID {}); application completion is not monitored.",
             initiated.desktop_id, initiated.pid
         );
+    }
+    if let Some(failure) = &output.report.failure {
+        println!("Failed before exec: {failure}");
     }
 }
 
@@ -175,4 +212,14 @@ fn emit(output: &RunOutput, json: bool) -> Result<(), Box<dyn Error>> {
         print_human(output);
     }
     Ok(())
+}
+
+fn parse_io_class(value: &str) -> Result<IoPriorityClass, String> {
+    match value {
+        "none" => Ok(IoPriorityClass::None),
+        "best-effort" => Ok(IoPriorityClass::BestEffort),
+        "realtime" => Ok(IoPriorityClass::Realtime),
+        "idle" => Ok(IoPriorityClass::Idle),
+        _value => Err(format!("unsupported I/O class `{value}`")),
+    }
 }
