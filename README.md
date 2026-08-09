@@ -265,6 +265,30 @@ autostart conflicts and owned overrides, procfs supervision prerequisites, and
 runtime API assumptions. Checks are independently classified as `ok`,
 `warning`, or `error`; warnings alone do not make the command fail.
 
+## Terminal UI
+
+The optional keyboard-only terminal dashboard keeps the existing CLI as the
+source of truth while exposing full control in one screen:
+
+```bash
+cargo run -- tui
+```
+
+The main dashboard shows the explicit application registry, current desktop
+availability, detected topology/E-core set, stored launch policy, and cached
+user-startup state. Keys are intentionally simple: `j`/`k` move, `Space`
+enables/disables, `a` adds discovered applications, `c` configures launch
+policy, `r` starts a one-shot run request, `s` starts a supervised request,
+`d` opens read-only doctor diagnostics, `u` manages user startup/autostart,
+`x` removes a registry entry, `f` refreshes, `?` opens help, and `q` quits.
+
+Startup/autostart mutations always require an in-TUI confirmation. The TUI does
+not run a shell, does not bypass registry/topology safety boundaries, and does
+not classify or move unrelated processes. It uses the existing registry,
+doctor, startup, run, and supervise behavior rather than implementing a second
+policy engine. Terminals smaller than 72x20 receive a resize notice instead of
+a broken layout.
+
 ### Validation and persistence
 
 Existing config files must contain `schema_version = 1`. TOML syntax errors,

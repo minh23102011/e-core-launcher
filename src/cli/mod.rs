@@ -5,6 +5,7 @@ mod run;
 mod startup;
 mod supervise;
 mod topology;
+mod tui;
 
 use std::error::Error;
 use std::path::PathBuf;
@@ -17,6 +18,7 @@ use self::run::{HelperArgs, RunArgs};
 use self::startup::StartupArgs;
 use self::supervise::SuperviseArgs;
 use self::topology::TopologyArgs;
+use self::tui::TuiArgs;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -63,6 +65,8 @@ enum Command {
     Supervise(SuperviseArgs),
     /// Manage user-level graphical-session startup integration.
     Startup(StartupArgs),
+    /// Open the keyboard-only full-control terminal dashboard.
+    Tui(TuiArgs),
     #[command(name = "__exec", hide = true)]
     InternalExec(HelperArgs),
 }
@@ -108,6 +112,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         Command::Run(arguments) => run::run(&arguments, cli.config.as_deref()),
         Command::Supervise(arguments) => supervise::run(&arguments, cli.config.as_deref()),
         Command::Startup(arguments) => startup::run(&arguments, cli.config.as_deref()),
+        Command::Tui(arguments) => tui::run(&arguments, cli.config.as_deref()),
         Command::InternalExec(arguments) => run::run_helper(&arguments),
     }
 }
