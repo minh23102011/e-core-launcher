@@ -1,5 +1,5 @@
-//! Reusable Linux topology detection, desktop discovery, explicit registry,
-//! and fail-closed E-core launch APIs.
+//! Reusable Linux topology, desktop discovery, explicit registry, fail-closed
+//! launch, verified-tree supervision, user startup, and diagnostic APIs.
 
 #![cfg_attr(not(target_os = "linux"), allow(dead_code))]
 
@@ -7,8 +7,11 @@
 compile_error!("ecore-launcher supports Linux only");
 
 pub mod discovery;
+pub mod doctor;
+pub mod integration;
 pub mod launcher;
 pub mod registry;
+pub mod supervisor;
 pub mod topology;
 
 pub use discovery::{
@@ -16,6 +19,15 @@ pub use discovery::{
     DiscoveryOptions, DiscoveryReport, DiscoveryWarning, DiscoveryWarningCategory,
     DiscoveryWarningSeverity, ExecParseError, ExecutableResolutionError, ExecutableResolver,
     ParsedExec,
+};
+pub use doctor::{
+    diagnose, diagnose_with_runner, DoctorCheck, DoctorOptions, DoctorReport, DoctorStatus,
+    SessionEnvironment,
+};
+pub use integration::{
+    assess_autostart, AutostartAssessment, AutostartState, CommandResult, CommandRunner,
+    DirectCommandRunner, IntegrationError, IntegrationPaths, ManagerEnvironmentStatus,
+    StartupChange, StartupManager, StartupStatus, USER_UNIT_NAME,
 };
 pub use launcher::{
     build_launch_plan, exec_with_affinity, execute_plan, execute_plan_with_options,
@@ -29,6 +41,10 @@ pub use registry::{
     RegisteredApplicationAvailability, RegisteredApplicationStatus, RegistryError, RegistryLoad,
     RegistryMutationResult, RegistryStore, ValidationError, CURRENT_SCHEMA_VERSION,
     MAX_REGISTERED_APPLICATIONS,
+};
+pub use supervisor::{
+    supervise_process_trees, SupervisionReport, SupervisorError, SupervisorOptions,
+    SupervisorWarning, DEFAULT_SUPERVISOR_POLL_INTERVAL,
 };
 pub use topology::{
     CoreClass, CpuTopology, CpuTopologyDetector, DetectionEvidence, DetectorError, EvidenceKind,

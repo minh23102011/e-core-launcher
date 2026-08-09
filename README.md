@@ -6,12 +6,11 @@ detected CPU efficiency cores. It will never classify or move arbitrary running
 processes, system services, kernel threads, desktop components, or unrelated
 workloads.
 
-Phase 1 provides conservative, read-only CPU topology detection. Phase 2 adds
-read-only desktop application discovery. Phase 3 adds an explicit,
-user-controlled TOML registry. Phase 4 launches only enabled, explicitly
-registered desktop applications after fresh resolution and confirmed E-core
-detection. Phase 5 applies stored delay, nice, and I/O policies and confirms
-the target exec transition. Discovery does **not** grant management consent.
+The completed CLI core combines conservative topology detection, safe desktop
+discovery, an explicit user-controlled registry, acknowledged no-shell launch,
+runtime scheduling policy, verified-descendant affinity supervision, optional
+user-level graphical-session startup, and read-only diagnostics. Discovery
+does **not** grant management consent.
 
 > If reliable E-core detection is unavailable, ecore-launcher will not invent
 > an E-core mask or launch an unpinned fallback.
@@ -21,8 +20,8 @@ the target exec transition. Discovery does **not** grant management consent.
 The registry is the opt-in boundary: a discovered application is only an
 available candidate; it is not selected or managed until the user adds its
 stable desktop ID. The registry retains a display-name and desktop-file
-snapshot for diagnostics, but later phases must re-resolve the desktop ID and
-must not trust cached executable data as launch authority.
+snapshot for diagnostics, but every launch re-resolves the desktop ID and does
+not trust cached executable data as launch authority.
 
 By default, the registry path is:
 
@@ -30,8 +29,9 @@ By default, the registry path is:
 2. `$HOME/.config/ecore-launcher/config.toml` if `XDG_CONFIG_HOME` is unset or
    empty.
 
-`--config PATH` overrides this path on every registry command. It is useful for
-tests and diagnostics and does not alter any other configuration location.
+`--config PATH` overrides this path for registry, launch, startup, and doctor
+commands. It is useful for tests and diagnostics and does not alter any other
+configuration location.
 `config path` prints the resolved path without creating it:
 
 ```bash
@@ -142,8 +142,8 @@ cargo run -- config show --json
 
 ## Running registered applications
 
-`run` is the only command that starts a process. With no IDs it selects every
-enabled registry entry; with IDs, every requested ID must already be both
+`run` is the explicit one-shot launcher. With no IDs it selects every enabled
+registry entry; with IDs, every requested ID must already be both
 registered and enabled. IDs are deduplicated and launched in desktop-ID order.
 Before any helper is started, every selected ID is freshly resolved through
 desktop discovery, `Terminal=true` entries are rejected, and topology must be
@@ -158,7 +158,7 @@ cargo run -- run --dry-run --json
 
 `run --dry-run` follows the same complete planning path but starts nothing.
 Its plan includes the current executable and arguments, exact E-core list,
-delay, nice value, I/O class and priority, and the retained process-tree
+delay, nice value, I/O class and priority, and the process-tree enforcement
 preference. It does not sleep or apply any runtime policy.
 For reproducible fixture diagnostics it accepts `--config`, `--data-home`,
 repeated `--data-dir`, `--ignore-desktop-filter`, and `--sysfs-root`. Launch
@@ -180,9 +180,90 @@ Earlier successful exec transitions remain reported if a later app fails. No
 shell, `taskset`, `ionice`, or post-launch policy change is used, so shell
 metacharacters remain literal arguments.
 
-Phase 5 retains `enforce_process_tree` as plan metadata but does not yet enforce
-process trees. Process monitoring, systemd/login integration, autostart,
-profiles, and manual/fallback CPU masks also remain out of scope.
+`run` exits after reporting confirmed exec transitions; it does not become a
+permanent monitor. Use `supervise` when enabled applications with
+`enforce_process_tree = true` need ongoing descendant affinity enforcement.
+
+## Process-tree supervision
+
+`supervise` uses the same complete planning, delay, helper, policy, and exec
+acknowledgement pipeline as `run`:
+
+```bash
+cargo run -- supervise
+cargo run -- supervise --json
+```
+
+After confirmed exec, only opted-in roots are enrolled. The supervisor records
+each root PID and Linux start time, follows only `/proc/<pid>/task/*/children`
+links from those known roots, verifies parentage and identities, and compares
+each live thread's affinity before applying the plan's exact E-core set. It
+never classifies or scans arbitrary processes by executable or name. Vanished
+processes are normal, persistent warnings are bounded, and polling defaults to
+one second. When all enrolled roots are gone it exits. SIGINT and SIGTERM stop
+the supervisor cleanly, restore its signal mask, and send no signal to launched
+applications.
+
+Linux can reparent a deliberately daemonized descendant outside the still
+verifiable root tree. Such a process is no longer enforceable and is never
+claimed by name or guessed ancestry.
+
+## User graphical-session startup
+
+Startup integration is optional and user-level only:
+
+```bash
+cargo run -- startup enable
+cargo run -- startup status
+cargo run -- startup status --json
+cargo run -- startup disable
+```
+
+Enable writes only the launcher-owned
+`$XDG_CONFIG_HOME/systemd/user/ecore-launcher.service` (with the usual HOME
+fallback), records a small ownership marker under `$XDG_STATE_HOME`, runs
+direct `systemctl --user daemon-reload` and `enable`, and does **not** start the
+service or launch applications immediately. The deterministic unit is tied to
+`graphical-session.target`, disables systemd environment-variable expansion in
+its safely quoted `ExecStart`, and uses `KillMode=process` so stopping the
+supervisor does not kill launched desktop applications. Disable removes only
+recognized launcher-owned state and preserves the registry and running apps.
+
+Desktop environments differ in how they activate `graphical-session.target`
+and import `DISPLAY`, `WAYLAND_DISPLAY`, `XDG_CURRENT_DESKTOP`, and the session
+bus into the systemd user manager. `doctor` diagnoses the current environment;
+users whose desktop does not activate or import the standard target/environment
+must configure that desktop's user-manager integration explicitly.
+
+Duplicate desktop autostart suppression is never implicit. The explicit form:
+
+```bash
+cargo run -- startup enable --suppress-autostart
+```
+
+detects matching enabled registry IDs in XDG system autostart locations and
+the commonly used `/usr/share/autostart`, then creates only a marked user-owned
+`Hidden=true` override under `$XDG_CONFIG_HOME/autostart`. Existing user files
+are never overwritten. `startup disable` removes only exact launcher-generated
+overrides, so suppression is reversible; adding an app to the registry alone
+does not change autostart.
+
+## Diagnostics
+
+`doctor` is read-only and emits concise human checks or deterministic
+structured JSON:
+
+```bash
+cargo run -- doctor
+cargo run -- doctor --json
+```
+
+It reports registry validity and enabled IDs, fresh desktop resolution,
+fail-closed topology and exact E-cores, affinity API/cpuset usability, policy
+privilege warnings, startup unit ownership/state, graphical-session readiness,
+autostart conflicts and owned overrides, procfs supervision prerequisites, and
+runtime API assumptions. Checks are independently classified as `ok`,
+`warning`, or `error`; warnings alone do not make the command fail.
 
 ### Validation and persistence
 
@@ -195,7 +276,8 @@ Delay is constrained to `0..=3600`. Nice is applied in Linux's `-20..=19`
 range; a negative value may fail without sufficient privilege. I/O classes are typed `none`, `realtime`, `best-effort`,
 or `idle`; `realtime` and `best-effort` require priority `0..=7`, while `none`
 and `idle` require no numeric priority. Privilege failures are reported without
-downgrading the policy. Process-tree enforcement remains a stored boolean only.
+downgrading the policy. Process-tree enforcement is active only in supervised
+launches whose stored setting is true.
 
 Mutations create a `0700` parent when needed, acquire an advisory lock on a
 same-directory lock file, reload the latest registry, validate one logical
@@ -327,7 +409,7 @@ inspected.
 
 ### Desktop-entry and locale limitations
 
-Phase 2 parses only the main `[Desktop Entry]` group and ignores desktop action
+Discovery parses only the main `[Desktop Entry]` group and ignores desktop action
 groups and unknown keys. It supports `Type`, localized `Name` and
 `GenericName`, `Exec`, `Icon`, `Hidden`, `NoDisplay`, `Terminal`, `TryExec`,
 `OnlyShowIn`, `NotShowIn`, `Categories`, and `StartupWMClass`. Supported string
@@ -415,7 +497,7 @@ asymmetric without corroboration, or contradictory. Both results have an empty
 
 ### Topology CLI and API
 
-Existing Phase 1 commands remain available:
+Topology commands remain available:
 
 ```bash
 cargo run -- topology
@@ -450,13 +532,16 @@ Synthetic application trees under `fixtures/desktop` cover valid metadata,
 static and quoted commands, every supported field code, shell metacharacters,
 malformed and unavailable entries, visibility filters, localized names,
 XDG overrides and hidden suppression, `TryExec`, conservative target
-deduplication, and repeated data-directory precedence. Registry tests use only
+deduplication, and repeated data-directory precedence. Registry and integration tests use only
 temporary configuration paths and synthetic discovery roots; they cover path
 resolution, TOML syntax/version/semantic failures, canonical serialization,
 unknown-value retention, private permissions, symlink rejection, atomic
 mutation rollback, sequential locked updates, unavailable entries, and every
 registry CLI command. Tests create temporary executable, absolute-path,
 symlink, and invalid-UTF-8 fixtures when filesystem properties matter.
+Supervisor tests use purpose-built child processes, exact synthetic E-core
+masks, and temporary XDG-facing state; no real GUI application or live user
+systemd configuration is used.
 
 ## Quality checks
 
@@ -468,8 +553,8 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-features
 ```
 
-The package forbids unsafe Rust. Phase 3 still has no process launching, CPU
-affinity, scheduling changes, autostart, monitoring, daemon, TUI, GUI, or
-non-Linux implementation.
-# e-core-launcher
-# e-core-launcher
+The package forbids unsafe Rust. Intentional limitations are Linux-only
+operation, no TUI/GUI, no adaptive or automatic background-process
+classification, no network or privileged daemon, no manual/fallback E-core
+mask, and no enforcement after a descendant deliberately escapes a verifiable
+managed tree.

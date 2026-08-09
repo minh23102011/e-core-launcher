@@ -13,7 +13,8 @@ use std::time::{Duration, Instant};
 
 use ioprio::{BePriorityLevel, Class as IoClass, Priority as IoPriority, RtPriorityLevel, Target};
 use nix::fcntl::{fcntl, FcntlArg, FdFlag, OFlag};
-use nix::sched::{sched_setaffinity, CpuSet};
+use nix::sched::{sched_getaffinity, sched_setaffinity, CpuSet};
+use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::{close, execv, pipe, Pid};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -25,6 +26,7 @@ use crate::topology::{CpuTopology, TopologyClass};
 const DEFAULT_ACKNOWLEDGEMENT_TIMEOUT: Duration = Duration::from_secs(5);
 const ACKNOWLEDGEMENT_POLL_INTERVAL: Duration = Duration::from_millis(5);
 const FAILED_HELPER_REAP_TIMEOUT: Duration = Duration::from_millis(100);
+const EXECUTION_REAP_INTERVAL: Duration = Duration::from_millis(100);
 const MAX_ACKNOWLEDGEMENT_BYTES: usize = 16 * 1024;
 
 /// A complete, validated request to launch explicitly managed applications.
@@ -55,7 +57,7 @@ pub struct PlannedApplication {
     pub io_class: IoPriorityClass,
     /// Per-class I/O priority, when required by the selected class.
     pub io_priority: Option<u8>,
-    /// Stored metadata retained for future process-tree enforcement.
+    /// Whether supervisor mode must keep verified descendants on this affinity set.
     pub enforce_process_tree: bool,
 }
 
@@ -66,6 +68,10 @@ pub struct InitiatedApplication {
     pub desktop_id: String,
     /// Helper PID, which became the target PID at successful exec.
     pub pid: u32,
+    /// Linux process start time captured immediately after acknowledged exec.
+    /// Supervision refuses enrollment when this identity cannot be confirmed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub process_start_time_ticks: Option<u64>,
     /// Explicit confirmation that helper spawn was not mistaken for target exec.
     pub exec_succeeded: bool,
 }
@@ -216,6 +222,12 @@ pub enum LauncherError {
     /// Applying the affinity set in the helper failed.
     #[error("failed to apply E-core affinity: {source}")]
     ApplyAffinity { source: nix::errno::Errno },
+    /// Linux accepted the syscall but retained a different allowed mask.
+    #[error("requested E-core affinity {requested:?}, but kernel reported {actual:?}")]
+    AffinityMismatch {
+        requested: Vec<u32>,
+        actual: Vec<u32>,
+    },
     /// Applying or verifying the exact nice value failed.
     #[error("failed to apply nice value {nice}: {source}")]
     ApplyNice {
@@ -276,9 +288,9 @@ impl LauncherError {
 
     fn helper_stage(&self) -> LaunchFailureStage {
         match self {
-            Self::ApplyAffinity { .. } | Self::InvalidAffinityCpu { .. } => {
-                LaunchFailureStage::Affinity
-            }
+            Self::ApplyAffinity { .. }
+            | Self::AffinityMismatch { .. }
+            | Self::InvalidAffinityCpu { .. } => LaunchFailureStage::Affinity,
             Self::ApplyNice { .. } | Self::NiceMismatch { .. } => LaunchFailureStage::Nice,
             Self::InvalidIoPolicy { .. }
             | Self::ApplyIoPriority { .. }
@@ -446,8 +458,9 @@ pub fn execute_plan_with_options(
         })
         .collect::<Result<Vec<_>, LauncherError>>()?;
     let mut report = LaunchReport::default();
+    let mut launched_child_pids = BTreeSet::new();
     for (scheduled, deadline) in schedule {
-        sleep_until(deadline);
+        sleep_until(deadline, &mut launched_child_pids);
         let Some(application) = by_id.get(scheduled.desktop_id.as_str()) else {
             continue;
         };
@@ -457,9 +470,13 @@ pub fn execute_plan_with_options(
             &plan.efficiency_cpus,
             options.acknowledgement_timeout,
         ) {
-            Ok(initiated) => report.initiated.push(initiated),
+            Ok(initiated) => {
+                launched_child_pids.insert(initiated.pid);
+                report.initiated.push(initiated);
+            }
             Err(failure) => {
                 report.failure = Some(failure.clone());
+                reap_finished_children(&mut launched_child_pids);
                 return Err(LauncherError::RuntimeLaunchFailed {
                     failure: Box::new(failure),
                     report: Box::new(report),
@@ -467,14 +484,32 @@ pub fn execute_plan_with_options(
             }
         }
     }
+    reap_finished_children(&mut launched_child_pids);
     Ok(report)
 }
 
-fn sleep_until(deadline: Instant) {
-    let remaining = deadline.saturating_duration_since(Instant::now());
-    if !remaining.is_zero() {
-        thread::sleep(remaining);
+fn sleep_until(deadline: Instant, launched_child_pids: &mut BTreeSet<u32>) {
+    loop {
+        reap_finished_children(launched_child_pids);
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return;
+        }
+        thread::sleep(remaining.min(EXECUTION_REAP_INTERVAL));
     }
+}
+
+fn reap_finished_children(launched_child_pids: &mut BTreeSet<u32>) {
+    launched_child_pids.retain(|pid| {
+        let Ok(raw_pid) = i32::try_from(*pid) else {
+            return false;
+        };
+        match waitpid(Pid::from_raw(raw_pid), Some(WaitPidFlag::WNOHANG)) {
+            Ok(WaitStatus::StillAlive) => true,
+            Ok(_) | Err(nix::errno::Errno::ECHILD) => false,
+            Err(_error) => true,
+        }
+    });
 }
 
 fn spawn_and_acknowledge(
@@ -528,6 +563,12 @@ fn spawn_and_acknowledge(
         Ok(()) => Ok(InitiatedApplication {
             desktop_id: application.desktop_id.clone(),
             pid,
+            process_start_time_ticks: crate::supervisor::process_start_time_at(
+                Path::new("/proc"),
+                pid,
+            )
+            .ok()
+            .flatten(),
             exec_succeeded: true,
         }),
         Err(error) => {
@@ -766,7 +807,17 @@ fn write_acknowledgement(
 fn apply_affinity(cpus: &[u32]) -> Result<(), LauncherError> {
     let cpu_set = build_cpu_set(cpus)?;
     sched_setaffinity(Pid::this(), &cpu_set)
-        .map_err(|source| LauncherError::ApplyAffinity { source })
+        .map_err(|source| LauncherError::ApplyAffinity { source })?;
+    let actual =
+        sched_getaffinity(Pid::this()).map_err(|source| LauncherError::ApplyAffinity { source })?;
+    if cpu_sets_equal(&cpu_set, &actual) {
+        Ok(())
+    } else {
+        Err(LauncherError::AffinityMismatch {
+            requested: cpu_set_values(&cpu_set),
+            actual: cpu_set_values(&actual),
+        })
+    }
 }
 
 fn apply_nice(nice: i8) -> Result<(), LauncherError> {
@@ -870,7 +921,7 @@ fn exec_prepared_target(
 
 /// Apply only E-core affinity and directly exec a target.
 ///
-/// This preserves the Phase 4 library entry point; runtime launches use
+/// This preserves the affinity-only library entry point; runtime launches use
 /// [`run_exec_helper`] so all effective policy and acknowledgement is applied.
 pub fn exec_with_affinity(
     cpus: &[u32],
@@ -920,6 +971,17 @@ fn build_cpu_set(cpus: &[u32]) -> Result<CpuSet, LauncherError> {
             .map_err(|source| LauncherError::InvalidAffinityCpu { cpu: *cpu, source })?;
     }
     Ok(cpu_set)
+}
+
+fn cpu_sets_equal(left: &CpuSet, right: &CpuSet) -> bool {
+    (0..CpuSet::count()).all(|cpu| left.is_set(cpu).ok() == right.is_set(cpu).ok())
+}
+
+fn cpu_set_values(set: &CpuSet) -> Vec<u32> {
+    (0..CpuSet::count())
+        .filter(|cpu| set.is_set(*cpu).unwrap_or(false))
+        .filter_map(|cpu| u32::try_from(cpu).ok())
+        .collect()
 }
 
 fn io_error_from_errno(errno: nix::errno::Errno) -> io::Error {

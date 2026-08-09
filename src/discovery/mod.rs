@@ -2,7 +2,7 @@
 //!
 //! The scanner reads only `applications` directories under configured XDG
 //! data roots. It never executes desktop-entry content and never invokes a
-//! shell. Desktop action groups are outside the supported Phase 2 scope.
+//! shell. Desktop action groups are outside the supported core scope.
 
 mod desktop_entry;
 mod error;

@@ -23,11 +23,11 @@ pub enum RegistryCommand {
     Show(ShowArgs),
     /// Remove explicit registry entries without changing desktop files or processes.
     Remove(RemoveArgs),
-    /// Mark explicit registry entries enabled for a later launcher phase.
+    /// Mark explicit registry entries enabled for launching.
     Enable(IdsArgs),
-    /// Mark explicit registry entries disabled for a later launcher phase.
+    /// Mark explicit registry entries disabled for launching.
     Disable(IdsArgs),
-    /// Update validated stored preferences for a later launcher phase.
+    /// Update validated stored launch preferences.
     Configure(ConfigureArgs),
     /// Inspect the resolved registry configuration.
     Config(ConfigArgs),
@@ -132,7 +132,7 @@ pub struct ConfigureArgs {
     #[arg(long)]
     io_priority: Option<u8>,
 
-    /// Stored process-tree preference (`true` or `false`) for a later phase.
+    /// Whether supervised launches should enforce descendant affinity.
     #[arg(long, value_name = "BOOL")]
     enforce_process_tree: Option<bool>,
 

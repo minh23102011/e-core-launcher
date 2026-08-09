@@ -1,6 +1,9 @@
 mod discover;
+mod doctor;
 mod registry;
 mod run;
+mod startup;
+mod supervise;
 mod topology;
 
 use std::error::Error;
@@ -9,7 +12,10 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 use self::discover::DiscoverArgs;
+use self::doctor::DoctorArgs;
 use self::run::{HelperArgs, RunArgs};
+use self::startup::StartupArgs;
+use self::supervise::SuperviseArgs;
 use self::topology::TopologyArgs;
 
 #[derive(Debug, Parser)]
@@ -19,7 +25,7 @@ use self::topology::TopologyArgs;
     about = "Opt-in Linux desktop application launcher for reliably detected E-cores"
 )]
 struct Cli {
-    /// Override the XDG registry configuration file for registry commands.
+    /// Override the XDG registry configuration file.
     #[arg(long, global = true, value_name = "PATH")]
     config: Option<PathBuf>,
 
@@ -49,8 +55,14 @@ enum Command {
     Discover(DiscoverArgs),
     /// Inspect active CPU topology without modifying the system.
     Topology(TopologyArgs),
+    /// Diagnose launch, startup, autostart, and supervision readiness read-only.
+    Doctor(DoctorArgs),
     /// Launch enabled, explicitly registered applications on detected E-cores.
     Run(RunArgs),
+    /// Launch enabled applications and enforce opted-in descendant affinity.
+    Supervise(SuperviseArgs),
+    /// Manage user-level graphical-session startup integration.
+    Startup(StartupArgs),
     #[command(name = "__exec", hide = true)]
     InternalExec(HelperArgs),
 }
@@ -92,7 +104,10 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         ),
         Command::Discover(arguments) => discover::run(&arguments),
         Command::Topology(arguments) => topology::run(&arguments),
+        Command::Doctor(arguments) => doctor::run(&arguments, cli.config.as_deref()),
         Command::Run(arguments) => run::run(&arguments, cli.config.as_deref()),
+        Command::Supervise(arguments) => supervise::run(&arguments, cli.config.as_deref()),
+        Command::Startup(arguments) => startup::run(&arguments, cli.config.as_deref()),
         Command::InternalExec(arguments) => run::run_helper(&arguments),
     }
 }

@@ -27,17 +27,31 @@ pub(crate) struct DiscoveryArgs {
 
 impl DiscoveryArgs {
     pub(crate) fn options(&self) -> DiscoveryOptions {
-        let mut options = DiscoveryOptions::from_environment();
-        let explicit_paths = self.data_home.is_some() || !self.data_dir.is_empty();
-        if explicit_paths {
-            options.data_home = self.data_home.clone();
-            options.data_dirs.clone_from(&self.data_dir);
-            options.require_existing_roots = true;
-        }
-        options.include_no_display = self.all;
-        options.ignore_desktop_filter = self.ignore_desktop_filter;
-        options
+        discovery_options(
+            self.all,
+            self.ignore_desktop_filter,
+            self.data_home.as_ref(),
+            &self.data_dir,
+        )
     }
+}
+
+pub(crate) fn discovery_options(
+    include_no_display: bool,
+    ignore_desktop_filter: bool,
+    data_home: Option<&PathBuf>,
+    data_dirs: &[PathBuf],
+) -> DiscoveryOptions {
+    let mut options = DiscoveryOptions::from_environment();
+    let explicit_paths = data_home.is_some() || !data_dirs.is_empty();
+    if explicit_paths {
+        options.data_home = data_home.cloned();
+        options.data_dirs = data_dirs.to_vec();
+        options.require_existing_roots = true;
+    }
+    options.include_no_display = include_no_display;
+    options.ignore_desktop_filter = ignore_desktop_filter;
+    options
 }
 
 #[derive(Debug, Args)]

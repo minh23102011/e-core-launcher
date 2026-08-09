@@ -22,28 +22,35 @@ pub struct RunArgs {
     #[arg(long)]
     json: bool,
 
+    #[command(flatten)]
+    launch: LaunchSelectionArgs,
+}
+
+/// Inputs shared by one-shot and supervised launch planning.
+#[derive(Clone, Debug, Args)]
+pub(crate) struct LaunchSelectionArgs {
     /// Registered desktop IDs to launch; omit to select every enabled entry.
     #[arg(value_name = "DESKTOP_ID")]
-    desktop_ids: Vec<String>,
+    pub(crate) desktop_ids: Vec<String>,
 
     /// Ignore OnlyShowIn and NotShowIn desktop-environment filters.
     #[arg(long)]
-    ignore_desktop_filter: bool,
+    pub(crate) ignore_desktop_filter: bool,
 
     /// Replacement XDG user data root; its applications child is scanned.
     #[arg(long, value_name = "PATH")]
-    data_home: Option<PathBuf>,
+    pub(crate) data_home: Option<PathBuf>,
 
     /// Replacement XDG system data root; repeat to set precedence order.
     #[arg(long, value_name = "PATH", action = clap::ArgAction::Append)]
-    data_dir: Vec<PathBuf>,
+    pub(crate) data_dir: Vec<PathBuf>,
 
     /// Alternate /sys/devices/system/cpu root for fixtures and diagnostics.
     #[arg(long, value_name = "PATH", default_value = "/sys/devices/system/cpu")]
-    sysfs_root: PathBuf,
+    pub(crate) sysfs_root: PathBuf,
 }
 
-impl RunArgs {
+impl LaunchSelectionArgs {
     fn discovery(&self) -> DiscoveryArgs {
         DiscoveryArgs {
             all: true,
@@ -98,6 +105,14 @@ struct RunOutput {
 }
 
 pub fn run(arguments: &RunArgs, config: Option<&Path>) -> Result<(), Box<dyn Error>> {
+    let plan = build_plan(&arguments.launch, config)?;
+    run_plan(plan, arguments.dry_run, arguments.json)
+}
+
+pub(crate) fn build_plan(
+    arguments: &LaunchSelectionArgs,
+    config: Option<&Path>,
+) -> Result<LaunchPlan, Box<dyn Error>> {
     let store = RegistryStore::new(resolve_config_path(config)?);
     let registry = store.load()?;
     let requested = &arguments.desktop_ids;
@@ -126,8 +141,16 @@ pub fn run(arguments: &RunArgs, config: Option<&Path>) -> Result<(), Box<dyn Err
         Some(report) => report,
         None => &empty_discovery,
     };
-    let plan = build_launch_plan(&registry, discovery, topology.as_ref(), requested)?;
-    let report = if arguments.dry_run {
+    Ok(build_launch_plan(
+        &registry,
+        discovery,
+        topology.as_ref(),
+        requested,
+    )?)
+}
+
+fn run_plan(plan: LaunchPlan, dry_run: bool, json: bool) -> Result<(), Box<dyn Error>> {
+    let report = if dry_run {
         LaunchReport::default()
     } else {
         match execute_plan(&plan) {
@@ -139,17 +162,17 @@ pub fn run(arguments: &RunArgs, config: Option<&Path>) -> Result<(), Box<dyn Err
                     plan,
                     report,
                 };
-                emit(&output, arguments.json)?;
+                emit(&output, json)?;
                 return Err(Box::new(error));
             }
         }
     };
     let output = RunOutput {
-        dry_run: arguments.dry_run,
+        dry_run,
         plan,
         report,
     };
-    emit(&output, arguments.json)?;
+    emit(&output, json)?;
     Ok(())
 }
 

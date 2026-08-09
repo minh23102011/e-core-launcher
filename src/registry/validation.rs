@@ -79,7 +79,11 @@ fn validate_desktop_id(field: &str, desktop_id: &str) -> Result<(), ValidationEr
             "must be non-empty and contain no surrounding whitespace",
         ));
     }
-    if desktop_id == "." || desktop_id == ".." || desktop_id.contains(['/', '\\', '\0']) {
+    if desktop_id == "."
+        || desktop_id == ".."
+        || desktop_id.contains(['/', '\\', '\0'])
+        || desktop_id.chars().any(char::is_control)
+    {
         return Err(error(
             field,
             "must be a stable desktop ID, not a filesystem path or traversal string",

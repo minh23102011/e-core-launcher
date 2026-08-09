@@ -57,7 +57,7 @@ pub struct LauncherDefaults {
     /// Default I/O priority when the selected class accepts one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_io_priority: Option<u8>,
-    /// Default process-tree preference for a later phase.
+    /// Default process-tree enforcement preference for supervised launches.
     pub default_enforce_process_tree: bool,
     /// Unknown launcher keys retained across canonical rewrites.
     #[serde(flatten)]
@@ -145,7 +145,7 @@ pub struct RegisteredApplication {
     /// Snapshot I/O priority when the selected class accepts one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub io_priority: Option<u8>,
-    /// Snapshot process-tree preference for a future phase.
+    /// Snapshot process-tree enforcement preference for supervised launches.
     pub enforce_process_tree: bool,
     /// Desktop-entry path captured for diagnostics only; it is never launch authority.
     #[serde(skip_serializing_if = "Option::is_none")]
